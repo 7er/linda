@@ -11,4 +11,12 @@ module Rinda
       ts.write(tuple) rescue nil
     end
   end
+
+  class TupleSpace
+    def rinda_eval(&tuple_producing_block)
+      Thread.new do
+        write(tuple_producing_block.call(self)) rescue nil
+      end
+    end
+  end
 end

@@ -3,16 +3,17 @@ require 'drb'
 require 'rinda_eval'
 require 'benchmark'
 
+
 DRb.start_service
 $ts = Rinda::TupleSpace.new
 
-def is_prime(me)
-  limit = Math.sqrt(me)
+def is_prime(candidate)
+  limit = Math.sqrt(candidate)
   (2..limit).each do |i|
     un1, un2, ok = $ts.read([:primes, i, nil])
-    return false if ok && (me % i == 0)
+    return false if ok && (candidate % i == 0)
   end
-  return true
+  true
 end
 
 def print_primes(limit)
