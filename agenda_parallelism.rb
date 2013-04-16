@@ -3,76 +3,89 @@ require 'drb'
 require 'rinda_eval'
 require 'benchmark'
 
+
 DRb.start_service
 $ts = Rinda::TupleSpace.new
 
-NUM_WORKERS = 5
-GRAIN = 4
-
-def init_primes
-  raise "Fuck" if GRAIN != 4
-  $ts.write([:primes, 0, 2, 4])
-  $ts.write([:primes, 1, 3, 9])
-  3
-end
+NUM_WORKERS = 10
+GRAIN = 50
 
 def is_prime(candidate)
-  index = 0
-  while true
-    _, _, prime, p2 = $ts.read([:primes, index, nil, nil])
-    if candidate % prime == 0
-      return false
-    end
-    if candidate > p2
-      break
-    end
-    index += 1
+  limit = Math.sqrt(candidate)
+  (2..limit).each do |i|
+    un1, un2, ok = $ts.read([:primes, i, nil])
+    return false if ok && (candidate % i == 0)
   end
   true
 end
 
-
-def worker(max_prime)
-  eot = false
-  while true
+def worker(limit)
+  loop do
     _, start = $ts.take([:next_task, nil])
-    puts "next task #{start}"
-    if start == -1
-      $ts.write([:next_task, -1])
+    if start == :die
+      $ts.write([:next_task, :die])
       return
     end
-    limit = [start + GRAIN, max_prime].min
-    $ts.write([:next_task, limit == max_prime ? -1 : limit])
-    my_primes = []
-    (start...limit).each do |candidate|
-      my_primes << candidate if is_prime(candidate)
+    stop = [start + GRAIN, limit + 1].min
+    #puts "write next_task #{stop}"
+    if stop == limit + 1
+      $ts.write([:next_task, :die])
+    else
+      $ts.write([:next_task, stop])
     end
-    $ts.write([:result, start, my_primes])
+    block = (start...stop).map do |candidate|
+      [candidate, is_prime(candidate)]
+    end
+    $ts.write([:result, start, block])
   end
 end
+
+
 
 def print_primes(limit)
-  (0...NUM_WORKERS).each do
-    $ts.rinda_eval { [:worker, worker(limit)] }
+  NUM_WORKERS.times do
+    $ts.rinda_eval { [:worker, worker(limit) ] }
   end
-  first_num = init_primes
-  $ts.write([:next_task, first_num])
-  eot = false
-  num_primes = 0
-  num = first_num
-  while num < limit
-    _, _, new_primes = $ts.take([:result, num, nil])
-    new_primes.each do |each, i|
-      np2 = each ** 2
-      $ts.write([:primes, num_primes, each, np2])
-      num_primes += 1
+  # fill initial primes
+  $ts.write([:primes, 2, true])
+  $ts.write([:primes, 3, true])
+  $ts.write([:primes, 4, false])
+  $ts.write([:primes, 5, true])
+  $ts.write([:primes, 6, false])
+  $ts.write([:primes, 7, true])  
+  $ts.write([:primes, 8, false])
+  $ts.write([:primes, 9, false])
+  $ts.write([:primes, 10, false])
+  start = 10
+  raise "Bollocks" unless GRAIN < (start ** 2 - start)
+  next_number = start + 1
+  $ts.write([:next_task, next_number])
+  loop do
+    _, block_start, block = $ts.take([:result, next_number, nil])
+    #puts "writing block: #{block.inspect}"
+    block.each do |number, is_prime|
+      $ts.write([:primes, number, is_prime])
     end
-    num += GRAIN
+    break if block.last.first == limit
+    next_number += GRAIN
   end
-  (0...num_primes).each do |i|
-    _, _, prime, _ = $ts.read([:primes, i, nil, nil])
-    puts prime
+
+  NUM_WORKERS.times do
+    $ts.take([:worker, nil])
+  end
+  (2..limit).each do |number|
+    _, _, is_prime = $ts.read([:primes, number, nil])
+    puts "#{number} is prime" if is_prime
   end
 end
 
-print_primes(10)
+# def print_primes(limit)
+#   (2..limit).each do |number|
+#     _, _, is_prime = $ts.read([:primes, number, nil])
+#     puts number if is_prime
+#   end
+# end
+
+puts Benchmark.measure { print_primes(500) }
+#print_primes(500)
+
