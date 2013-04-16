@@ -16,15 +16,40 @@ def is_prime(candidate)
   true
 end
 
-def print_primes(limit)
-  (2..limit).each do |each|
-    Rinda.rinda_eval($ts) { |ts| [:primes, each, is_prime(each)] }
+class Primes
+  def initialize(limit)
+    @limit = limit
   end
-  puts "finished evaling"
-  (2..limit).each do |each|
-    i, j, is_prime = $ts.read([:primes, each, nil])
-    puts "#{each} is prime" if is_prime
+  
+  def generate
+    (2..@limit).each do |each|
+      $ts.rinda_eval { [:primes, each, is_prime(each)] }
+    end
+  end
+
+  def count
+    result = 0
+    (2..@limit).each do |each|
+      _, _, is_prime = $ts.read([:primes, each, nil])
+      result += 1 if is_prime
+    end
+    result
+  end
+
+  def print
+    primes = (2..@limit).select do |each|
+      _, _, is_prime = $ts.read([:primes, each, nil])
+      is_prime
+    end
+    primes.each {|prime| puts "#{prime} is prime" }
   end
 end
 
-print_primes(500)
+primes = Primes.new(500)
+count = 0
+puts Benchmark.measure {
+  primes.generate
+  count = primes.count
+}
+raise "Wrong was #{count}" if count != 95
+primes.print
